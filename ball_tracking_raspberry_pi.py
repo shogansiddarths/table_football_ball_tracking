@@ -24,7 +24,7 @@ while True:
 
     # Detecting the Orange Ball
     
-    lower_orange = np.array([10, 1200, 130])
+    lower_orange = np.array([18, 120, 130])
     upper_orange = np.array([40, 255, 255])
 
     mask_ball = cv2.inRange(hsv, lower_orange, upper_orange)
