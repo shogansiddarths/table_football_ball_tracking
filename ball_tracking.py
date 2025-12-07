@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 from picamera2 import Picamera2
 import time
+from ble_sender import BLESender
 
 # Initialising the Raspberry Pi Camera
 
@@ -15,6 +16,8 @@ def get_frame():
     frame = picam2.capture_array()
     return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
+# Initialize BLE Sender
+ble = BLESender()
 
 # Real-time Ball Tracking
 
@@ -48,6 +51,9 @@ while True:
 
                 # Printing the coordinates
                 print(f"Ball detected at: {ball_center}")
+
+                # Send x and y through BLE
+                ble.send_data(x, y, 0)
 
     # Displaying
     
