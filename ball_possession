@@ -3,9 +3,7 @@ import numpy as np
 import time
 from collections import deque
 
-# ----------------------------
-# CONFIG
-# ----------------------------
+
 BALL_HSV_LOW  = (5, 100, 100)
 BALL_HSV_HIGH = (25, 255, 255)
 
@@ -30,9 +28,7 @@ goals = {"left": 0, "right": 0}
 prev_ball_pos = None
 prev_time = None
 
-# ----------------------------
-# PROCESSING FUNCTIONS
-# ----------------------------
+
 def preprocess(frame):
     frame = cv2.resize(frame, (FRAME_W, FRAME_H))
     blur = cv2.GaussianBlur(frame, (5, 5), 0)
@@ -122,9 +118,7 @@ def estimate_speed(ball_center):
     prev_time = now
     return speed
 
-# ----------------------------
-# FRAME PROCESSOR (prints only)
-# ----------------------------
+
 def process_frame(frame):
     global possession_counts, goals
 
@@ -170,9 +164,7 @@ def process_frame(frame):
     print(f"Possession Black:   {black_pct:.1f}%")
     print("===============================")
 
-# ---------------------------- 
-# RUN VIDEO
-# ----------------------------
+
 def run_video(path):
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
@@ -187,9 +179,7 @@ def run_video(path):
 
     cap.release()
 
-# ----------------------------
-# RUN IMAGE
-# ----------------------------
+
 def run_image(path):
     img = cv2.imread(path)
     if img is None:
@@ -197,9 +187,7 @@ def run_image(path):
         return
     process_frame(img)
 
-# ----------------------------
-# RUN CAMERA
-# ----------------------------
+
 def run_camera(device=0):
     cap = cv2.VideoCapture(device)
     if not cap.isOpened():
@@ -212,9 +200,7 @@ def run_camera(device=0):
             continue
         process_frame(frame)
 
-# ----------------------------
-# ENTRY
-# ----------------------------
+
 if __name__ == "__main__":
     print("Choose mode:")
     print("1 = Video file")
