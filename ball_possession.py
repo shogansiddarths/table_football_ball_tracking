@@ -4,9 +4,12 @@ import time
 from collections import deque
 from picamera2 import Picamera2
 
+# HSV color range for detecting the foosball (orange ball)
 
 BALL_HSV_LOW  = (5, 100, 100)
 BALL_HSV_HIGH = (25, 255, 255)
+
+# Thresholds for detecting white and black players
 
 WHITE_V_MIN = 180
 WHITE_S_MAX = 80
@@ -15,13 +18,19 @@ BLACK_V_MAX = 80
 MIN_PLAYER_AREA = 80
 MAX_PLAYER_AREA = 5000
 
+# Conversion factor for speed estimation
+
 PIXELS_PER_CM = 6
+
+# Frame size for processing (lower = faster)
 
 FRAME_W = 480
 FRAME_H = 270
 
 # Stats
 possession_counts = {"white": 0, "black": 0}
+
+# Previous ball position and time (used for speed calculation)
 
 prev_ball_pos = None
 prev_time = None
@@ -76,6 +85,9 @@ def detect_players(hsv, gray):
 
     return players
 
+//Find the player closest to the ball.
+Returns the player and distance to the ball.//
+
 def nearest_player_to_ball(players, ball_center):
     if ball_center is None or not players:
         return None, None
@@ -92,6 +104,8 @@ def nearest_player_to_ball(players, ball_center):
             best = p
 
     return best, best_dist
+
+    //Estimate ball speed in cm/s using frame-to-frame displacement.//
 
 def estimate_speed(ball_center):
     global prev_ball_pos, prev_time
@@ -110,7 +124,8 @@ def estimate_speed(ball_center):
         dist_px = (dx*dx + dy*dy)**0.5
         dt = now - prev_time
         if dt > 0:
-            speed = (dist_px / PIXELS_PER_CM) / dt
+            speed = (dist_px / PIXELS_PER_CM) / dt             # Convert pixels to centimeters and divide by time
+
 
     prev_ball_pos = ball_center
     prev_time = now
@@ -118,7 +133,7 @@ def estimate_speed(ball_center):
 
 
 def process_frame(frame):
-    global possession_counts, goals
+    global possession_counts
 
     hsv, gray = preprocess(frame)
     ball_center = detect_ball(hsv)
@@ -131,6 +146,8 @@ def process_frame(frame):
     speed = estimate_speed(ball_center)
 
     # ---------------- TERMINAL OUTPUT ----------------
+        # Calculate possession percentages
+
     total = possession_counts["white"] + possession_counts["black"]
     if total == 0:
         white_pct = 0
