@@ -6,8 +6,8 @@ from picamera2 import Picamera2
 
 # HSV color range for detecting the foosball (orange ball)
 
-BALL_HSV_LOW  = (5, 100, 100)
-BALL_HSV_HIGH = (25, 255, 255)
+BALL_HSV_LOW  = (8, 120, 120)
+BALL_HSV_HIGH = (20, 255, 255)
 
 # Thresholds for detecting white and black players
 
@@ -38,7 +38,7 @@ prev_time = None
 
 def preprocess(frame):
     frame = cv2.resize(frame, (FRAME_W, FRAME_H))
-    blur = cv2.GaussianBlur(frame, (3, 3), 0)
+    blur = cv2.GaussianBlur(frame, (5, 5), 0)
     hsv = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
     gray = cv2.cvtColor(blur, cv2.COLOR_BGR2GRAY)
     return hsv, gray
