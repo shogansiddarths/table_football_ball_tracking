@@ -4,25 +4,6 @@ import time
 from collections import deque
 from picamera2 import Picamera2
 
-def run_pi_camera():
-    picam2 = Picamera2()
-
-    config = picam2.create_video_configuration(
-        main={"size": (FRAME_W, FRAME_H), "format": "BGR888"}
-    )
-    picam2.configure(config)
-    picam2.start()
-
-    print("Pi Camera started. Press CTRL+C to stop.")
-
-    try:
-        while True:
-            frame = picam2.capture_array()
-            process_frame(frame)
-    except KeyboardInterrupt:
-        print("Stopping Pi Camera...")
-    finally:
-        picam2.stop()
 
 BALL_HSV_LOW  = (5, 100, 100)
 BALL_HSV_HIGH = (25, 255, 255)
@@ -35,15 +16,12 @@ MIN_PLAYER_AREA = 80
 MAX_PLAYER_AREA = 5000
 
 PIXELS_PER_CM = 6
-GOAL_LEFT_X  = 20
-GOAL_RIGHT_X = 620
 
 FRAME_W = 480
 FRAME_H = 270
 
 # Stats
 possession_counts = {"white": 0, "black": 0}
-goals = {"left": 0, "right": 0}
 
 prev_ball_pos = None
 prev_time = None
@@ -150,12 +128,6 @@ def process_frame(frame):
     if nearest:
         possession_counts[nearest["color"]] += 1
 
-    if ball_center:
-        if ball_center[0] < GOAL_LEFT_X:
-            goals["left"] += 1
-        elif ball_center[0] > GOAL_RIGHT_X:
-            goals["right"] += 1
-
     speed = estimate_speed(ball_center)
 
     # ---------------- TERMINAL OUTPUT ----------------
@@ -175,6 +147,8 @@ def process_frame(frame):
     print(" Foosball Tracking Statistics")
     print("===============================")
     print(f"Ball position:      {ball_center}")
+    print(f"Ball Speed:         {speed:.2f} cm/s")
+
     if nearest is None:
         possession_code = 0
     else:
@@ -219,6 +193,26 @@ def run_camera(device=0):
         if not ret:
             continue
         process_frame(frame)
+
+def run_pi_camera():
+    picam2 = Picamera2()
+
+    config = picam2.create_video_configuration(
+        main={"size": (FRAME_W, FRAME_H), "format": "BGR888"}
+    )
+    picam2.configure(config)
+    picam2.start()
+
+    print("Pi Camera started. Press CTRL+C to stop.")
+
+    try:
+        while True:
+            frame = picam2.capture_array()
+            process_frame(frame)
+    except KeyboardInterrupt:
+        print("Stopping Pi Camera...")
+    finally:
+        picam2.stop()
 
 if __name__ == "__main__":
     print("Choose mode:")
