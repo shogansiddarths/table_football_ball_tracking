@@ -2,7 +2,27 @@ import cv2
 import numpy as np
 import time
 from collections import deque
+from picamera2 import Picamera2
 
+def run_pi_camera():
+    picam2 = Picamera2()
+
+    config = picam2.create_video_configuration(
+        main={"size": (FRAME_W, FRAME_H), "format": "BGR888"}
+    )
+    picam2.configure(config)
+    picam2.start()
+
+    print("Pi Camera started. Press CTRL+C to stop.")
+
+    try:
+        while True:
+            frame = picam2.capture_array()
+            process_frame(frame)
+    except KeyboardInterrupt:
+        print("Stopping Pi Camera...")
+    finally:
+        picam2.stop()
 
 BALL_HSV_LOW  = (5, 100, 100)
 BALL_HSV_HIGH = (25, 255, 255)
@@ -18,8 +38,8 @@ PIXELS_PER_CM = 6
 GOAL_LEFT_X  = 20
 GOAL_RIGHT_X = 620
 
-FRAME_W = 640
-FRAME_H = 360
+FRAME_W = 480
+FRAME_H = 270
 
 # Stats
 possession_counts = {"white": 0, "black": 0}
@@ -31,7 +51,7 @@ prev_time = None
 
 def preprocess(frame):
     frame = cv2.resize(frame, (FRAME_W, FRAME_H))
-    blur = cv2.GaussianBlur(frame, (5, 5), 0)
+    blur = cv2.GaussianBlur(frame, (3, 3), 0)
     hsv = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
     gray = cv2.cvtColor(blur, cv2.COLOR_BGR2GRAY)
     return hsv, gray
@@ -200,12 +220,12 @@ def run_camera(device=0):
             continue
         process_frame(frame)
 
-
 if __name__ == "__main__":
     print("Choose mode:")
     print("1 = Video file")
     print("2 = Image file")
-    print("3 = Live camera")
+    print("3 = USB Camera")
+    print("4 = Raspberry Pi Camera")
 
     choice = input("Mode: ")
 
@@ -219,6 +239,9 @@ if __name__ == "__main__":
 
     elif choice == "3":
         run_camera(0)
+
+    elif choice == "4":
+        run_pi_camera()
 
     else:
         print("Invalid choice.")
