@@ -85,8 +85,7 @@ def detect_players(hsv, gray):
 
     return players
 
-//Find the player closest to the ball.
-Returns the player and distance to the ball.//
+#Find the player closest to the ball. Returns the player and distance to the ball
 
 def nearest_player_to_ball(players, ball_center):
     if ball_center is None or not players:
@@ -105,7 +104,7 @@ def nearest_player_to_ball(players, ball_center):
 
     return best, best_dist
 
-    //Estimate ball speed in cm/s using frame-to-frame displacement.//
+    #Estimate ball speed in cm/s using frame-to-frame displacement.
 
 def estimate_speed(ball_center):
     global prev_ball_pos, prev_time
