@@ -264,11 +264,28 @@ def run_video(path):
         if ret:
             process_frame(frame)
 def run_picamera():
+    global last_print_time
+
     picam2 = Picamera2()
-    config = picam2.create_preview_configuration(main={"format": 'RGB888', "size": (1280,720)})
+    config = picam2.create_preview_configuration(main={"format": 'RGB888', "size": (FRAME_W, FRAME_H)})
     picam2.configure(config)
     picam2.start()
 
-    while True:
-        frame = picam2.capture_array()
-        process_frame(frame)  # <-- use your existing processing function
+    print("Starting Pi camera feed. Press Ctrl+C to exit.")
+
+    try:
+        while True:
+            # Capture frame as numpy array (RGB)
+            frame = picam2.capture_array()
+
+            # Convert RGB to BGR for OpenCV
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+            # Process the frame (ball + players + stats + display)
+            process_frame(frame)
+
+    except KeyboardInterrupt:
+        print("Exiting...")
+    finally:
+        cv2.destroyAllWindows()
+        picam2.close()
