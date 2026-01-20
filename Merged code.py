@@ -1,101 +1,164 @@
 import cv2
 import numpy as np
-import time
 from picamera2 import Picamera2
+import time
 
-# ----------------------------------------
-# Ball & Player Tracking Settings
-# ----------------------------------------
-PIXELS_PER_CM = 6
-FRAME_W, FRAME_H = 480, 270
-MIN_PLAYER_AREA, MAX_PLAYER_AREA = 80, 5000
-WHITE_V_MIN, WHITE_S_MAX = 180, 80
-BLACK_V_MAX = 80
+# ==========================================
+# STEP 0: Initialize Pi Camera @120 FPS
+# ==========================================
+FPS_TARGET = 120
 
-possession_counts = {"white": 0, "black": 0}
-prev_ball_pos = None
-prev_time = None
+picam2 = Picamera2()
+config = picam2.create_video_configuration(
+    main={"size": (1280, 720), "format": "BGR888"},
+    controls={"FrameRate": FPS_TARGET}
+)
+picam2.configure(config)
+picam2.start()
+time.sleep(1)
 
-# ----------------------------------------
-# Player Detection Functions
-# ----------------------------------------
-def preprocess(frame):
-    frame = cv2.resize(frame, (FRAME_W, FRAME_H))
-    blur = cv2.GaussianBlur(frame, (3, 3), 0)
-    hsv = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
-    gray = cv2.cvtColor(blur, cv2.COLOR_BGR2GRAY)
-    return hsv, gray
+print("Camera started — Ball + Player Possession Tracking")
 
-def detect_players(hsv, gray):
-    players = []
-    v = hsv[:, :, 2]
-    s = hsv[:, :, 1]
+# ==========================================
+# GLOBAL VARIABLES
+# ==========================================
+M = None
+field_ready = False
+field_width = 0
+field_height = 0
 
-    white_mask = ((v >= WHITE_V_MIN) & (s <= WHITE_S_MAX)).astype(np.uint8) * 255
-    white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_OPEN, np.ones((3,3), np.uint8))
+# FPS measurement
+frame_count = 0
+start_time = time.time()
+fps = 0.0
 
-    _, black_mask = cv2.threshold(gray, BLACK_V_MAX, 255, cv2.THRESH_BINARY_INV)
-    black_mask = cv2.morphologyEx(black_mask, cv2.MORPH_OPEN, np.ones((3,3), np.uint8))
+# ==========================================
+# FUNCTION: Detect Playfield using Violet Tape
+# ==========================================
+def detect_playfield(frame):
+    global M, field_ready, field_width, field_height
 
-    for mask, label in [(white_mask, "white"), (black_mask, "black")]:
-        cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        for c in cnts:
-            area = cv2.contourArea(c)
-            if MIN_PLAYER_AREA < area < MAX_PLAYER_AREA:
-                M = cv2.moments(c)
-                if M["m00"] == 0: 
-                    continue
-                cx = int(M["m10"] / M["m00"])
-                cy = int(M["m01"] / M["m00"])
-                players.append({"center": (cx, cy), "color": label})
-    return players
-
-def nearest_player_to_ball(players, ball_center):
-    if ball_center is None or not players:
-        return None, None
-    bx, by = ball_center
-    best = None
-    best_dist = 1e9
-    for p in players:
-        px, py = p["center"]
-        d = ((px - bx) ** 2 + (py - by) ** 2) ** 0.5
-        if d < best_dist:
-            best_dist = d
-            best = p
-    return best, best_dist
-
-def estimate_speed(ball_center):
-    global prev_ball_pos, prev_time
-    if ball_center is None:
-        prev_ball_pos = None
-        prev_time = None
-        return 0
-    now = time.time()
-    speed = 0
-    if prev_ball_pos is not None:
-        dx = ball_center[0] - prev_ball_pos[0]
-        dy = ball_center[1] - prev_ball_pos[1]
-        dist_px = (dx*dx + dy*dy)**0.5
-        dt = now - prev_time
-        if dt > 0:
-            speed = (dist_px / PIXELS_PER_CM) / dt
-    prev_ball_pos = ball_center
-    prev_time = now
-    return speed
-
-# ----------------------------------------
-# Ball Detection (BLUE BALL Version)
-# ----------------------------------------
-def detect_ball_blue(frame):
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    lower_blue = np.array([90, 80, 50])
-    upper_blue = np.array([130, 255, 255])
-    mask = cv2.inRange(hsv, lower_blue, upper_blue)
-    mask = cv2.medianBlur(mask, 7)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5,5), np.uint8))
+
+    lower_purple = np.array([120, 80, 80])
+    upper_purple = np.array([165, 255, 255])
+
+    mask = cv2.inRange(hsv, lower_purple, upper_purple)
+    mask = cv2.medianBlur(mask, 5)
 
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    best_cnt = None
+
+    corners = []
+    for cnt in contours:
+        if cv2.contourArea(cnt) > 150:
+            Mnts = cv2.moments(cnt)
+            if Mnts["m00"] != 0:
+                cx = int(Mnts["m10"] / Mnts["m00"])
+                cy = int(Mnts["m01"] / Mnts["m00"])
+                corners.append([cx, cy])
+
+    if len(corners) != 4:
+        return frame, False
+
+    corners = np.array(corners, dtype="float32")
+    corners = corners[np.argsort(corners[:, 1])]
+    top = corners[:2][np.argsort(corners[:2, 0])]
+    bottom = corners[2:][np.argsort(corners[2:, 0])]
+    ordered = np.array([top[0], top[1], bottom[1], bottom[0]], dtype="float32")
+
+    field_width = int(max(
+        np.linalg.norm(ordered[0] - ordered[1]),
+        np.linalg.norm(ordered[2] - ordered[3])
+    ))
+    field_height = int(max(
+        np.linalg.norm(ordered[0] - ordered[3]),
+        np.linalg.norm(ordered[1] - ordered[2])
+    ))
+
+    dst = np.array([
+        [0, 0],
+        [field_width - 1, 0],
+        [field_width - 1, field_height - 1],
+        [0, field_height - 1]
+    ], dtype="float32")
+
+    M = cv2.getPerspectiveTransform(ordered, dst)
+    field_ready = True
+
+    cv2.polylines(frame, [ordered.astype(int)], True, (255, 0, 0), 3)
+    return frame, True
+
+# ==========================================
+# FUNCTION: Get player centers from mask
+# ==========================================
+def get_player_centers(mask, min_area=400):
+    centers = []
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if area < min_area:
+            continue
+
+        Mnts = cv2.moments(cnt)
+        if Mnts["m00"] == 0:
+            continue
+
+        cx = int(Mnts["m10"] / Mnts["m00"])
+        cy = int(Mnts["m01"] / Mnts["m00"])
+        centers.append((cx, cy))
+
+    return centers
+
+# ==========================================
+# FUNCTION: Closest distance
+# ==========================================
+def closest_distance(ball, players):
+    if not players:
+        return float("inf")
+    return min(np.hypot(ball[0] - px, ball[1] - py) for px, py in players)
+
+# ==========================================
+# REAL-TIME LOOP
+# ==========================================
+while True:
+    frame = picam2.capture_array()
+    output = frame.copy()
+
+    # ---------------- FPS COUNTER ----------------
+    frame_count += 1
+    elapsed = time.time() - start_time
+    if elapsed >= 1.0:
+        fps = frame_count / elapsed
+        frame_count = 0
+        start_time = time.time()
+
+    # ------------------------------------------
+    # STEP 1: Detect Playfield
+    # ------------------------------------------
+    if not field_ready:
+        output, _ = detect_playfield(output)
+        cv2.putText(output, "Detecting Playfield...", (20, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
+    # ------------------------------------------
+    # STEP 2: HSV Conversion
+    # ------------------------------------------
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
+    # ------------------------------------------
+    # STEP 3: Blue Ball Detection
+    # ------------------------------------------
+    lower_blue = np.array([90, 80, 50])
+    upper_blue = np.array([130, 255, 255])
+
+    mask_blue = cv2.inRange(hsv, lower_blue, upper_blue)
+    mask_blue = cv2.medianBlur(mask_blue, 7)
+    mask_blue = cv2.morphologyEx(mask_blue, cv2.MORPH_CLOSE,
+                                 np.ones((5, 5), np.uint8))
+
+    contours, _ = cv2.findContours(mask_blue, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
     best_circle = None
     best_score = 0
 
@@ -103,76 +166,74 @@ def detect_ball_blue(frame):
         area = cv2.contourArea(cnt)
         if area < 80 or area > 2500:
             continue
-        perimeter = cv2.arcLength(cnt, True)
-        if perimeter == 0:
+
+        peri = cv2.arcLength(cnt, True)
+        if peri == 0:
             continue
-        circularity = 4 * np.pi * area / (perimeter * perimeter)
+
+        circularity = 4 * np.pi * area / (peri * peri)
         if circularity < 0.6:
             continue
+
         (x, y), r = cv2.minEnclosingCircle(cnt)
         if r < 5 or r > 20:
             continue
+
         score = circularity * area
         if score > best_score:
             best_score = score
-            best_cnt = cnt
             best_circle = (int(x), int(y), int(r))
+
+    # ------------------------------------------
+    # STEP 4: Player Detection (Black & White)
+    # ------------------------------------------
+    lower_black = np.array([0, 0, 0])
+    upper_black = np.array([180, 255, 60])
+
+    lower_white = np.array([0, 0, 200])
+    upper_white = np.array([180, 40, 255])
+
+    black_mask = cv2.inRange(hsv, lower_black, upper_black)
+    white_mask = cv2.inRange(hsv, lower_white, upper_white)
+
+    black_players = get_player_centers(black_mask)
+    white_players = get_player_centers(white_mask)
+
+    # ------------------------------------------
+    # STEP 5: Draw Ball + Possession Logic
+    # ------------------------------------------
     if best_circle is not None:
         x, y, r = best_circle
-        return (x, y), mask
-    return None, mask
+        ball = (x, y)
 
-# ----------------------------------------
-# Processing Frame
-# ----------------------------------------
-def process_frame(frame):
-    global possession_counts
-    hsv, gray = preprocess(frame)
-    players = detect_players(hsv, gray)
+        cv2.circle(output, (x, y), r, (0, 255, 0), 2)
+        cv2.circle(output, (x, y), 4, (0, 0, 255), -1)
 
-    ball_center, mask = detect_ball_blue(frame)
-    nearest, dist = nearest_player_to_ball(players, ball_center)
-    if nearest:
-        possession_counts[nearest["color"]] += 1
-    speed = estimate_speed(ball_center)
+        d_black = closest_distance(ball, black_players)
+        d_white = closest_distance(ball, white_players)
 
-    # Output stats
-    total = possession_counts["white"] + possession_counts["black"]
-    white_pct = (possession_counts["white"] / total * 100) if total > 0 else 0
-    black_pct = (possession_counts["black"] / total * 100) if total > 0 else 0
-    possession_code = 0 if nearest is None else (1 if nearest["color"]=="white" else 2)
+        if min(d_black, d_white) > 40:
+            possession = "FREE BALL"
+        elif d_black < d_white:
+            possession = "BLACK"
+        else:
+            possession = "WHITE"
 
-    print(f"Ball: {ball_center}, Speed: {speed:.2f} cm/s, Possession: {possession_code}, White: {white_pct:.1f}%, Black: {black_pct:.1f}%")
+        cv2.putText(output, f"Possession: {possession}",
+                    (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 1,
+                    (0, 255, 255), 2)
 
-    # Display
-    display = frame.copy()
-    if ball_center:
-        cv2.circle(display, ball_center, 10, (0,255,0), 2)
-    cv2.imshow("Frame", display)
-    cv2.imshow("Ball Mask", mask)
-    cv2.waitKey(1)
+    # ------------------------------------------
+    # DISPLAY
+    # ------------------------------------------
+    cv2.imshow("Ball Tracking", output)
+    cv2.imshow("Blue Mask", mask_blue)
 
-# ----------------------------------------
-# Main Loop (Pi Camera)
-# ----------------------------------------
-def run_pi_camera():
-    picam2 = Picamera2()
-    config = picam2.create_video_configuration(main={"size": (FRAME_W, FRAME_H), "format": "BGR888"})
-    picam2.configure(config)
-    picam2.start()
-    time.sleep(1)
-    print("Pi Camera started — tracking blue ball")
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
 
-    try:
-        while True:
-            frame = picam2.capture_array()
-            process_frame(frame)
-    except KeyboardInterrupt:
-        print("Stopping...")
-    finally:
-        picam2.stop()
-        cv2.destroyAllWindows()
-
-# Run
-if __name__=="__main__":
-    run_pi_camera()
+# ==========================================
+# CLEANUP
+# ==========================================
+cv2.destroyAllWindows()
+picam2.stop()
