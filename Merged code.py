@@ -179,8 +179,27 @@ def process_frame(frame):
 
     hsv, gray = preprocess(frame)
     ball_center = detect_ball_pi(hsv)
-    players = detect_players(hsv, gray)
+    ball_mask = np.zeros_like(gray)  # define it first
+    if ball_center is not None:
+        cv2.circle(ball_mask, ball_center, 7, 255, -1)  # ball = white
+
+    # ---- Rods ----
     rod_ys = detect_rods(frame)
+    rod_mask = np.zeros_like(gray)
+    for y in rod_ys:
+        cv2.line(rod_mask, (0,y), (frame.shape[1],y), 255, 3)
+
+    # ---- Field ----
+    # Simple field detection using thresholding (adjust if needed)
+    field_mask = cv2.inRange(hsv, np.array([30, 30, 30]), np.array([90, 255, 255]))  # green-ish field
+    field_mask = cv2.morphologyEx(field_mask, cv2.MORPH_OPEN, np.ones((3,3),np.uint8))
+
+    # ---- Combine masks ----
+    combined_mask = cv2.bitwise_or(field_mask, ball_mask)
+    combined_mask = cv2.bitwise_or(combined_mask, rod_mask)
+
+    # ---- Player Detection (optional for possession) ----
+    players = detect_players(hsv, gray)
     if rod_ys:
         players = assign_players_to_rods(players, rod_ys)
     nearest = nearest_player_to_ball(players, ball_center)
@@ -199,6 +218,8 @@ def process_frame(frame):
 
         print(f"Ball with: {possession_color}, White: {white_pct:.1f}%, Black: {black_pct:.1f}%")
         last_print_time = now
+    cv2.imshow("Field Mask", combined_mask)
+    cv2.waitKey(1)
 
     # Display (optional)
     disp = frame.copy()
@@ -209,7 +230,6 @@ def process_frame(frame):
         cv2.circle(disp, p["center"], 5, color, -1)
     cv2.imshow("Tracking", disp)
     cv2.waitKey(1)
-
 # ---------------- RUN PI CAMERA ----------------
 def run_pi_camera():
     try:
@@ -235,6 +255,37 @@ def run_pi_camera():
         picam2.stop()
         cv2.destroyAllWindows()
 
+def run_image(path):
+    img = cv2.imread(path)
+    if img is None:
+        print("Error opening image:",path)
+        return
+    process_frame(img)
+
 # ---------------- MAIN ----------------
 if __name__ == "__main__":
-    run_pi_camera()
+    print("Choose mode:")
+    print("1 = Video file")
+    print("2 = Image file")
+    print("3 = USB Camera")
+    print("4 = Raspberry Pi Camera")
+
+    choice = input("Mode: ")
+
+    if choice == "1":
+        video_path = r"C:\Users\Deepika\OneDrive\Documents\Deepika\tracker3 (1).mp4"
+        run_video(video_path)
+
+    elif choice == "2":
+        image_path = r"C:\Users\Deepika\OneDrive\Documents\Deepika\balltracker2.jpg"
+        run_image(image_path)
+
+    elif choice == "3":
+        run_camera(0)
+
+    elif choice == "4":
+        run_pi_camera()
+
+    else:
+        print("Invalid choice.")
+        
