@@ -148,21 +148,33 @@ def preprocess(frame):
     return hsv, gray
 
 # ---------------- ROD DETECTION ----------------
-def detect_rods(frame):
+def detect_rods_dynamic(frame, angle_tolerance=15):
+    """
+    Detect rods in any orientation up to ±angle_tolerance degrees.
+    Returns list of rod positions (y-coordinates of center of rods).
+    """
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (5,5), 0)
     edges = cv2.Canny(blur, 50, 150)
     lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=50, minLineLength=50, maxLineGap=10)
+
     rod_ys = []
     if lines is not None:
-        # keep only horizontal lines
-        horizontal_lines = [line[0] for line in lines if abs(line[0][1]-line[0][3])<5]
-        # sort by line length descending
-        horizontal_lines.sort(key=lambda l: abs(l[2]-l[0]), reverse=True)
-        # pick top 8 lines only
+        horizontal_lines = []
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            angle = np.degrees(np.arctan2(y2-y1, x2-x1))
+            if abs(angle) <= angle_tolerance:  # allow small rotation
+                horizontal_lines.append(line[0])
+
+        # sort by length descending
+        horizontal_lines.sort(key=lambda l: ((l[2]-l[0])**2 + (l[3]-l[1])**2)**0.5, reverse=True)
+
+        # pick top 8 lines as rods
         for line in horizontal_lines[:8]:
             y_center = (line[1]+line[3])//2
             rod_ys.append(y_center)
+
     rod_ys.sort()
     return rod_ys
 
@@ -177,14 +189,30 @@ def assign_players_to_rods(players, rod_ys):
 def process_frame(frame):
     global possession_counts, last_print_time
 
+
     hsv, gray = preprocess(frame)
+
+    players = detect_players(hsv, gray)
+
     ball_center = detect_ball_pi(hsv)
-    ball_mask = np.zeros_like(gray)  # define it first
-    if ball_center is not None:
-        cv2.circle(ball_mask, ball_center, 7, 255, -1)  # ball = white
+    nearest = nearest_player_to_ball(players, ball_center)
+    possession_color = nearest["color"] if nearest else "None"
+    if nearest:
+        possession_counts[nearest["color"]] += 1
+
+    # ---- Ball Mask ----
+    ball_mask = np.zeros_like(gray)
+    if ball_center:
+        # Color ball according to possession
+        if possession_color == "white":
+            cv2.circle(ball_mask, ball_center, 7, 255, -1)  # white ball
+        elif possession_color == "black":
+            cv2.circle(ball_mask, ball_center, 7, 180, -1)  # gray ball for black possession
+        else:
+            cv2.circle(ball_mask, ball_center, 7, 100, -1)  # unknown = dark gray
 
     # ---- Rods ----
-    rod_ys = detect_rods(frame)
+    rod_ys = detect_rods_dynamic(frame)
     rod_mask = np.zeros_like(gray)
     for y in rod_ys:
         cv2.line(rod_mask, (0,y), (frame.shape[1],y), 255, 3)
@@ -199,14 +227,7 @@ def process_frame(frame):
     combined_mask = cv2.bitwise_or(combined_mask, rod_mask)
 
     # ---- Player Detection (optional for possession) ----
-    players = detect_players(hsv, gray)
-    if rod_ys:
-        players = assign_players_to_rods(players, rod_ys)
-    nearest = nearest_player_to_ball(players, ball_center)
-    if nearest:
-        possession_counts[nearest["color"]] += 1
-
-    speed = estimate_speed(ball_center)
+    
 
     # Print once per second
     now = time.time()
@@ -219,7 +240,8 @@ def process_frame(frame):
         print(f"Ball with: {possession_color}, White: {white_pct:.1f}%, Black: {black_pct:.1f}%")
         last_print_time = now
     cv2.imshow("Field Mask", combined_mask)
-    cv2.waitKey(1)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
     # Display (optional)
     disp = frame.copy()
@@ -277,7 +299,7 @@ if __name__ == "__main__":
         run_video(video_path)
 
     elif choice == "2":
-        image_path = r"C:\Users\Deepika\OneDrive\Documents\Deepika\balltracker2.jpg"
+        image_path = r"C:\Users\Deepika\OneDrive\Documents\Deepika\ball10.jpg"
         run_image(image_path)
 
     elif choice == "3":
