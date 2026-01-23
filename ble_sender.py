@@ -1,7 +1,6 @@
 import subprocess
 from threading import Thread, Lock
 from time import sleep
-import random
 
 class BLESender:
     def __init__(self):
@@ -9,6 +8,11 @@ class BLESender:
         self._x = 0
         self._y = 0
         self._possession = 0
+        self._score_black = 0
+        self._score_white = 0
+        self._goal_event = 0
+        self._speed = 0
+        self._frame = 0
 
         # BLE initialization status flag, 0 = not initialized, 1 = initializing, 2 = initialized
         self._initialized_status = 0
@@ -44,10 +48,11 @@ class BLESender:
         return f"{val & 0xFF:02X}"
 
     # Build payload from x, y, possession
-    def _build_payload(self, x, y, possession):
+    def _build_payload(self, x, y, possession, score_black, score_white, goal_event, speed, frame):
         # Convert x and y to big-endian byte pairs, as it would not fit a single byte
         x_high, x_low = self._to_big_endian(x)
         y_high, y_low = self._to_big_endian(y)
+        speed_high, speed_low = self._to_big_endian(speed)
 
         # Build payload data in hex
         payload = [
@@ -55,7 +60,13 @@ class BLESender:
             self._to_hex(x_low),
             self._to_hex(y_high),
             self._to_hex(y_low),
-            self._to_hex(possession)
+            self._to_hex(possession),
+            self._to_hex(score_black),
+            self._to_hex(score_white),
+            self._to_hex(goal_event),
+            self._to_hex(speed_high),
+            self._to_hex(speed_low),
+            self._to_hex(frame)
         ]
 
         return payload
@@ -95,7 +106,7 @@ class BLESender:
         self._run_cmd("sudo hciconfig hci0 up")
         sleep(0.5)
 
-        # Enable advertising        
+        # Enable advertising
         self._run_cmd("sudo hciconfig hci0 leadv 0")
 
         # Mark as initialized
@@ -103,8 +114,6 @@ class BLESender:
 
     # Sending loop
     def _sender_loop(self):
-        self._running = True
-
         # Initialize BLE if not already done
         if self._initialized_status == 0:
             self._initialize_ble()
@@ -116,10 +125,10 @@ class BLESender:
         while True:
             # Grab latest values under lock
             with self._lock:
-                x, y, possession = self._x, self._y, self._possession
+                x, y, possession, score_black, score_white, goal_event, speed, frame = self._x, self._y, self._possession, self._score_black, self._score_white, self._goal_event, self._speed, self._frame
 
             # Build payload and command
-            payload = self._build_payload(x, y, possession)
+            payload = self._build_payload(x, y, possession, score_black, score_white, goal_event, speed, frame)
             cmd = self._build_cmd(payload)
 
             # Run the command
@@ -129,14 +138,21 @@ class BLESender:
             sleep(0.333)
 
     # Method to send data through BLE
-    def send_data(self, x, y, possession):
+    def send_data(self, x, y, possession, score_black, score_white, goal_event, speed, frame):
         # Update latest values under lock
         with self._lock:
             self._x = x
             self._y = y
             self._possession = possession
+            self._score_black = score_black
+            self._score_white = score_white
+            self._goal_event = goal_event
+            self._speed = speed
+            self._frame = frame
 
         # Start background sender if not already running
         if not self._running:
+            self._running = True
+
             self._thread = Thread(target=self._sender_loop, daemon=True)
             self._thread.start()
