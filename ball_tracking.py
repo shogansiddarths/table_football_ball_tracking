@@ -7,7 +7,7 @@ from ble_sender import BLESender
 # Initialising the Raspberry Pi Camera
 
 picam2 = Picamera2()
-config = picam2.create_video_configuration(main={"size": (1280, 720)})
+config = picam2.create_video_configuration(main={"size": (384, 216)})
 picam2.configure(config)
 picam2.start()
 time.sleep(1)

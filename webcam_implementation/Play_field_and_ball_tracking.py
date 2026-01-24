@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 
 #STEP 1: Preprocessing the image
-img = cv2.imread("football_table.png")
+img = cv2.imread(r"C:\Users\shoga\Desktop\table_football_ball_tracking\webcam_implementation\football_table.png")
 if img is None:
     raise Exception("Image not found!")
 
