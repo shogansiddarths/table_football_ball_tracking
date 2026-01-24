@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+    <head>
+        <title>Live BLE Data</title>
+    </head>
+    <body>
+        <h1>Live Game Data</h1>
+
+        <div>X: <span id="x">0</span></div>
+        <div>Y: <span id="y">0</span></div>
+        <div>Possession: <span id="possession">0</span></div>
+        <div>Score Black: <span id="score_black">0</span></div>
+        <div>Score White: <span id="score_white">0</span></div>
+        <div>Goal Event: <span id="goal_event">None</span></div>
+        <div>Speed: <span id="speed">0</span></div>
+        <div>Frame: <span id="frame">0</span></div>
+
+        <script>
+            const ws = new WebSocket('ws://localhost:8765');
+
+            ws.onmessage = (event) => {
+                const d = JSON.parse(event.data);
+
+                x.textContent = d.x;
+                y.textContent = d.y;
+                possession.textContent = d.possession;
+                score_black.textContent = d.score_black;
+                score_white.textContent = d.score_white;
+                goal_event.textContent = d.goal_event;
+                speed.textContent = d.speed;
+                frame.textContent = d.frame;
+            };
+        </script>
+    </body>
+</html>
