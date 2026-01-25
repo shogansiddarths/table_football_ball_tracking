@@ -15,13 +15,18 @@ RODS = [
     {"color": "white", "x1": 46,  "x2": 476, "y": (518 + 527) // 2},
     {"color": "black", "x1": 48,  "x2": 473, "y": (619 + 623) // 2},
 ]
+# Threshold for determining if the ball is close enough to a rod to be "possessed"
 
 POSSESSION_Y_THRESHOLD = 40
+
+# Conversion factor from pixels to centimeters
 PIXELS_PER_CM = 6
+# Default Pi camera resolution
 FRAME_W = 1000
 FRAME_H = 700
-
+# Track possession counts for statistics
 possession_counts = {"white": 0, "black": 0}
+# Previous ball position and time for speed calculation
 prev_ball_pos = None
 prev_time = None
 
@@ -37,9 +42,10 @@ field_height = 0
 # BALL DETECTION 
 # ===============================
 def detect_ball_pi(hsv):
+    # HSV range for detecting the ball
     lower_ball = np.array([85, 60, 40])
     upper_ball = np.array([140, 255, 255])
-
+    # Mask out everything except ball colors
     mask = cv2.inRange(hsv, lower_ball, upper_ball)
     mask = cv2.medianBlur(mask, 7)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
@@ -58,7 +64,8 @@ def detect_ball_pi(hsv):
         if peri == 0:
             continue
 
-        circ = 4 * np.pi * area / (peri * peri)
+             # Circularity check (perfect circle = 1)
+   circ = 4 * np.pi * area / (peri * peri)
         if circ < 0.6:
             continue
 
@@ -76,6 +83,7 @@ def detect_ball_pi(hsv):
 # ===============================
 # SPEED ESTIMATION 
 # ===============================
+    #Estimate ball speed in cm/s based on movement between frames.
 def estimate_speed(ball_center):
     global prev_ball_pos, prev_time
 
@@ -91,7 +99,7 @@ def estimate_speed(ball_center):
         dist_px = (dx*dx + dy*dy) ** 0.5
         dt = now - prev_time
         if dt > 0:
-            speed = (dist_px / PIXELS_PER_CM) / dt
+            speed = (dist_px / PIXELS_PER_CM) / dt# convert pixels/sec to cm/sec
 
     prev_ball_pos = ball_center
     prev_time = now
@@ -100,6 +108,8 @@ def estimate_speed(ball_center):
 # ===============================
 # POSSESSION LOGIC 
 # ===============================
+#Determine which rod has possession of the ball.
+    #Returns 'white', 'black', or None.
 def determine_possession(ball_center):
     if ball_center is None:
         return None
@@ -115,9 +125,12 @@ def determine_possession(ball_center):
 # PLAYFIELD DETECTION 
 # ===============================
 def detect_playfield(frame):
+    #Detect the playfield and compute the homography matrix for warping.
+    #Assumes the field has a dominant color in HSV (adjust as needed).
     global M, field_ready, field_width, field_height
 
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        # Mask the table color (adjust HSV for your table)
     mask = cv2.inRange(hsv, (120, 80, 80), (165, 255, 255))
     mask = cv2.medianBlur(mask, 5)
 
@@ -141,9 +154,11 @@ def detect_playfield(frame):
     top = pts[:2][np.argsort(pts[:2,0])]
     bot = pts[2:][np.argsort(pts[2:,0])]
     ordered = np.array([top[0], top[1], bot[1], bot[0]], dtype="float32")
+    # Compute field width and height
 
     field_width = int(np.linalg.norm(ordered[0] - ordered[1]))
     field_height = int(np.linalg.norm(ordered[0] - ordered[3]))
+    # Destination points for warp (top-left origin)
 
     dst = np.array([
         [0,0],
@@ -151,6 +166,7 @@ def detect_playfield(frame):
         [field_width,field_height],
         [0,field_height]
     ], dtype="float32")
+    # Compute homography matrix
 
     M = cv2.getPerspectiveTransform(ordered, dst)
     field_ready = True
@@ -159,6 +175,8 @@ def detect_playfield(frame):
 # PROCESS FRAME
 # ===============================
 def preprocess(frame):
+        """Apply Gaussian blur and convert to HSV."""
+
     blur = cv2.GaussianBlur(frame, (5, 5), 0)
     return cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
 
@@ -176,12 +194,14 @@ def process_frame(frame):
         possession_counts[possession] += 1
 
     speed = estimate_speed(ball_center)
+    # Compute possession percentages
 
     total = possession_counts["white"] + possession_counts["black"]
     white_pct = (possession_counts["white"] / total * 100) if total else 0
     black_pct = (possession_counts["black"] / total * 100) if total else 0
 
     possession_code = 1 if possession == "white" else 2 if possession == "black" else 0
+    # Print statistics
 
     print("\n===============================")
     print(" Foosball Tracking Statistics")
@@ -192,6 +212,7 @@ def process_frame(frame):
     print(f"Possession White:   {white_pct:.1f}%")
     print(f"Possession Black:   {black_pct:.1f}%")
     print("===============================")
+    # Draw rods and ball on camera view
 
     disp = frame.copy()
     if ball_center:
